@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>서비스기획2팀 과제현황</title>
+  <!-- React + Babel (빌드 없이 바로 실행) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+           background: #f8fafc; color: #0f172a; }
+    a { text-decoration: none; }
+    /* 로딩 스피너 */
+    .spinner { display: inline-block; width: 18px; height: 18px;
+      border: 2px solid #e2e8f0; border-top-color: #6366f1;
+      border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ⚠️  배포 후 아래 URL을 Apps Script 웹앱 URL로 교체하세요
+//      Apps Script → 배포 → 새 배포 → 유형: 웹 앱 → URL 복사
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const API_URL = "https://script.google.com/a/macros/gripcorp.co/s/AKfycbxFh1wpOy5YUDAL8vYbgC1xy9d2vNhGE_anuyUcV1h7bZAoDc5tbZ56-Mvsp3ea_OV4gg/exec";
+
+// ── 색상 팔레트 ───────────────────────────────────────────────────────────────
+const PRIORITY_COLOR = { 필수:"#dc2626", 상:"#ea580c", 중:"#ca8a04", 하:"#65a30d", 백로그:"#9ca3af" };
+const STATUS_COLOR   = { 릴리스:"#6366f1", 개발중:"#3b82f6", QA:"#8b5cf6", "PRD 작성":"#f59e0b",
+  상세기획완료:"#10b981", 상세기획중:"#14b8a6", 기획검토:"#f97316", 개발검토:"#06b6d4",
+  의사결정대기:"#9ca3af", 대기:"#cbd5e1", 보류:"#e2e8f0" };
+const PM_COLORS = ["#6366f1","#3b82f6","#8b5cf6","#ec4899","#f59e0b","#10b981","#14b8a6"];
+
+const BOOKING_STAGES = [
+  { key:"신규검토", label:"신규인입",  sub:"기획 검토 단계",            color:"#ef4444", bg:"#fef2f2", border:"#fecaca", dot:"🔴" },
+  { key:"검토대기", label:"신규검토",  sub:"개발/디자인 부킹 검토 대상", color:"#f97316", bg:"#fff7ed", border:"#fed7aa", dot:"🟠" },
+  { key:"검토중",   label:"검토중",    sub:"리소스 확인 중",              color:"#3b82f6", bg:"#eff6ff", border:"#bfdbfe", dot:"🔵" },
+  { key:"검토완료", label:"검토완료",  sub:"개발 부킹 확정",              color:"#22c55e", bg:"#f0fdf4", border:"#bbf7d0", dot:"🟢" },
+];
+
+// ── 집계 헬퍼 ─────────────────────────────────────────────────────────────────
+function countBy(arr, key) {
+  return arr.reduce((acc, r) => { const v = r[key]||"(없음)"; acc[v]=(acc[v]||0)+1; return acc; }, {});
+}
+function topN(obj, n=10) {
+  return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n);
+}
+
+// ── 공통 태스크 테이블 ────────────────────────────────────────────────────────
+function TaskTable({ tasks, color }) {
+  if (!tasks.length) return <p style={{fontSize:12,color:"#94a3b8",padding:"10px 0"}}>해당 과제가 없습니다.</p>;
+  return (
+    <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead>
+          <tr style={{background:"rgba(0,0,0,0.04)"}}>
+            {["인입채널","도메인","과제명","우선순위","PM","상태","목표","Jira"].map(h=>(
+              <th key={h} style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((t,i)=>(
+            <tr key={i} style={{borderBottom:"1px solid #f1f5f9",background:i%2===0?"transparent":"rgba(255,255,255,0.5)"}}>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.ch}</td>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.domain}</td>
+              <td style={{padding:"6px 10px",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}} title={t.title}>{t.title}</td>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                <span style={{background:(PRIORITY_COLOR[t.priority]||"#9ca3af")+"22",color:PRIORITY_COLOR[t.priority]||"#9ca3af",padding:"2px 7px",borderRadius:4,fontWeight:600,fontSize:11}}>{t.priority}</span>
+              </td>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.pm}</td>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                <span style={{background:(STATUS_COLOR[t.status]||"#94a3b8")+"22",color:STATUS_COLOR[t.status]||"#475569",padding:"2px 7px",borderRadius:4,fontSize:11}}>{t.status}</span>
+              </td>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap",fontSize:11,color:"#64748b"}}>{t.target}</td>
+              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                {t.jira
+                  ? <a href={t.jira} target="_blank" rel="noopener noreferrer"
+                       style={{color:color||"#3b82f6",fontSize:11,fontWeight:600,background:(color||"#3b82f6")+"15",padding:"2px 8px",borderRadius:4,display:"inline-block"}}>
+                      {t.jira.split("/browse/")[1]} ↗
+                    </a>
+                  : <span style={{color:"#cbd5e1",fontSize:11}}>—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── 메인 대시보드 ─────────────────────────────────────────────────────────────
+function Dashboard() {
+  const [tasks, setTasks]         = React.useState([]);
+  const [loading, setLoading]     = React.useState(true);
+  const [error, setError]         = React.useState(null);
+  const [updatedAt, setUpdatedAt] = React.useState(null);
+
+  const [activeBooking,  setActiveBooking]  = React.useState(null);
+  const [activeStatus,   setActiveStatus]   = React.useState(null);
+  const [activePriority, setActivePriority] = React.useState(null);
+  const [activePm,       setActivePm]       = React.useState(null);
+
+  // ── 데이터 fetch ─────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    fetch(API_URL)
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === 'ok') {
+          setTasks(json.data || []);
+          setUpdatedAt(json.updatedAt);
+        } else {
+          setError("API 오류: " + (json.message || "알 수 없는 오류"));
+        }
+      })
+      .catch(() => setError("데이터를 불러오지 못했습니다. API URL을 확인하세요."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── 집계 ─────────────────────────────────────────────────────────────────
+  const total    = tasks.length;
+  const released = tasks.filter(t=>t.status==="릴리스").length;
+  const inProg   = tasks.filter(t=>["개발중","QA","상세기획완료","상세기획중","기획검토","개발검토","PRD 작성"].includes(t.status)).length;
+  const waiting  = tasks.filter(t=>["대기","보류","의사결정대기"].includes(t.status)).length;
+
+  const statusMap   = countBy(tasks, "status");
+  const priorityMap = countBy(tasks, "priority");
+  const pmMap       = countBy(tasks, "pm");
+  const bookingCounts = BOOKING_STAGES.reduce((acc,s)=>{ acc[s.key]=tasks.filter(t=>t.booking===s.key).length; return acc; },{});
+
+  const toggle = (val, setter, cur) => setter(cur===val ? null : val);
+  const card = {background:"#fff",border:"1px solid #e2e8f0",borderRadius:12,padding:"18px 20px"};
+
+  const fmtDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  };
+
+  // ── 로딩 / 에러 상태 ─────────────────────────────────────────────────────
+  if (loading) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12}}>
+      <div className="spinner"/>
+      <p style={{fontSize:13,color:"#64748b"}}>Google Sheets에서 데이터를 불러오는 중...</p>
+    </div>
+  );
+
+  if (error) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16,padding:32}}>
+      <div style={{fontSize:32}}>⚠️</div>
+      <p style={{fontSize:14,color:"#ef4444",fontWeight:600}}>{error}</p>
+      <p style={{fontSize:12,color:"#94a3b8",textAlign:"center",lineHeight:1.6}}>
+        index.html의 <code style={{background:"#f1f5f9",padding:"2px 6px",borderRadius:4}}>API_URL</code> 값을<br/>
+        Apps Script 웹앱 배포 URL로 교체해주세요.
+      </p>
+    </div>
+  );
+
+  // ── 정상 렌더 ─────────────────────────────────────────────────────────────
+  return (
+    <div style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif",background:"#f8fafc",minHeight:"100vh",padding:"24px"}}>
+
+      {/* 헤더 */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{fontSize:21,fontWeight:700,color:"#0f172a",margin:0}}>서비스기획2팀 과제현황</h1>
+          <p style={{fontSize:12,color:"#64748b",margin:"4px 0 0"}}>
+            {updatedAt ? `최종 업데이트: ${fmtDate(updatedAt)}` : ""} &nbsp;|&nbsp; 총 과제: <strong>{total}건</strong>
+          </p>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[{label:"릴리스완료",val:released,color:"#6366f1"},{label:"진행중",val:inProg,color:"#3b82f6"},{label:"대기/보류",val:waiting,color:"#94a3b8"}].map(s=>(
+            <div key={s.label} style={{...card,padding:"10px 16px",textAlign:"center",minWidth:80}}>
+              <div style={{fontSize:20,fontWeight:700,color:s.color}}>{s.val}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 개발 부킹 파이프라인 */}
+      <div style={{...card,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div>
+            <h2 style={{fontSize:14,fontWeight:700,color:"#0f172a",margin:0}}>⚙️ 개발 부킹 현황</h2>
+            <p style={{fontSize:11,color:"#94a3b8",margin:"3px 0 0"}}>단계 클릭 시 과제 목록 확인</p>
+          </div>
+          {activeBooking && <button onClick={()=>setActiveBooking(null)} style={{fontSize:11,color:"#64748b",background:"#f1f5f9",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>닫기 ✕</button>}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:activeBooking?14:0}}>
+          {BOOKING_STAGES.map((s,idx)=>{
+            const active = activeBooking===s.key;
+            return (
+              <div key={s.key} onClick={()=>toggle(s.key,setActiveBooking,activeBooking)}
+                style={{background:active?s.bg:"#fafafa",border:`2px solid ${active?s.color:s.border}`,borderRadius:10,padding:"12px 14px",cursor:"pointer",position:"relative",transition:"all 0.15s"}}>
+                {idx<3 && <div style={{position:"absolute",right:-14,top:"50%",transform:"translateY(-50%)",color:"#cbd5e1",fontSize:14,zIndex:2}}>▶</div>}
+                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}>
+                  <span>{s.dot}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:s.color}}>{s.label}</span>
+                </div>
+                <div style={{fontSize:28,fontWeight:800,color:s.color,lineHeight:1.1}}>{bookingCounts[s.key]||0}</div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:2}}>건</div>
+                <div style={{fontSize:10,color:"#94a3b8",marginTop:5,lineHeight:1.4}}>{s.sub}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {activeBooking && (()=>{
+          const si = BOOKING_STAGES.find(s=>s.key===activeBooking);
+          const filtered = tasks.filter(t=>t.booking===activeBooking);
+          return (
+            <div style={{background:si.bg,border:`1px solid ${si.border}`,borderRadius:10,padding:14}}>
+              <p style={{fontSize:13,fontWeight:600,color:si.color,margin:"0 0 10px"}}>{si.dot} {si.label} — {filtered.length}건</p>
+              <TaskTable tasks={filtered} color={si.color}/>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 하단 3개 섹션 */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+
+        {/* 상태별 */}
+        <div>
+          <div style={card}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <h2 style={{fontSize:13,fontWeight:700,color:"#0f172a",margin:0}}>📊 상태별 현황</h2>
+              {activeStatus && <button onClick={()=>setActiveStatus(null)} style={{fontSize:10,color:"#64748b",background:"#f1f5f9",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer"}}>✕</button>}
+            </div>
+            {topN(statusMap).map(([label,cnt])=>{
+              const pct = Math.round(cnt/total*100);
+              const color = STATUS_COLOR[label]||"#94a3b8";
+              const active = activeStatus===label;
+              return (
+                <div key={label} onClick={()=>toggle(label,setActiveStatus,activeStatus)}
+                  style={{marginBottom:7,cursor:"pointer",padding:"4px 6px",borderRadius:6,background:active?"#f1f5f9":"transparent"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                    <span style={{fontWeight:active?700:400,color:active?color:"#374151"}}>{label}</span>
+                    <span style={{fontWeight:600,color:"#374151"}}>{cnt}<span style={{color:"#94a3b8",fontWeight:400}}> ({pct}%)</span></span>
+                  </div>
+                  <div style={{background:"#f1f5f9",borderRadius:4,height:6}}>
+                    <div style={{width:`${pct}%`,background:color,borderRadius:4,height:"100%"}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {activeStatus && (
+            <div style={{...card,marginTop:10,borderColor:STATUS_COLOR[activeStatus]||"#e2e8f0"}}>
+              <p style={{fontSize:12,fontWeight:600,color:STATUS_COLOR[activeStatus]||"#374151",margin:"0 0 10px"}}>
+                {activeStatus} — {tasks.filter(t=>t.status===activeStatus).length}건
+              </p>
+              <TaskTable tasks={tasks.filter(t=>t.status===activeStatus)} color={STATUS_COLOR[activeStatus]}/>
+            </div>
+          )}
+        </div>
+
+        {/* 우선순위별 */}
+        <div>
+          <div style={card}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <h2 style={{fontSize:13,fontWeight:700,color:"#0f172a",margin:0}}>🎯 우선순위별 현황</h2>
+              {activePriority && <button onClick={()=>setActivePriority(null)} style={{fontSize:10,color:"#64748b",background:"#f1f5f9",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer"}}>✕</button>}
+            </div>
+            {topN(priorityMap).map(([label,cnt])=>{
+              const pct = Math.round(cnt/total*100);
+              const color = PRIORITY_COLOR[label]||"#94a3b8";
+              const active = activePriority===label;
+              return (
+                <div key={label} onClick={()=>toggle(label,setActivePriority,activePriority)}
+                  style={{marginBottom:10,cursor:"pointer",padding:"4px 6px",borderRadius:6,background:active?"#f1f5f9":"transparent"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <span style={{fontSize:12,fontWeight:active?700:400,color:active?color:"#374151"}}>{label}</span>
+                    <span style={{fontSize:13,fontWeight:700,color}}>{cnt}건</span>
+                  </div>
+                  <div style={{background:"#f1f5f9",borderRadius:6,height:8}}>
+                    <div style={{width:`${pct}%`,background:color,borderRadius:6,height:"100%"}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {activePriority && (
+            <div style={{...card,marginTop:10,borderColor:PRIORITY_COLOR[activePriority]||"#e2e8f0"}}>
+              <p style={{fontSize:12,fontWeight:600,color:PRIORITY_COLOR[activePriority]||"#374151",margin:"0 0 10px"}}>
+                우선순위 '{activePriority}' — {tasks.filter(t=>t.priority===activePriority).length}건
+              </p>
+              <TaskTable tasks={tasks.filter(t=>t.priority===activePriority)} color={PRIORITY_COLOR[activePriority]}/>
+            </div>
+          )}
+        </div>
+
+        {/* PM별 */}
+        <div>
+          <div style={card}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <h2 style={{fontSize:13,fontWeight:700,color:"#0f172a",margin:0}}>👤 PM별 리소스 현황</h2>
+              {activePm && <button onClick={()=>setActivePm(null)} style={{fontSize:10,color:"#64748b",background:"#f1f5f9",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer"}}>✕</button>}
+            </div>
+            {topN(pmMap).map(([pm,cnt],idx)=>{
+              const pct = Math.round(cnt/total*100);
+              const color = PM_COLORS[idx%PM_COLORS.length];
+              const active = activePm===pm;
+              const pending = tasks.filter(t=>t.pm===pm && ["신규검토","검토대기","검토중"].includes(t.booking)).length;
+              return (
+                <div key={pm} onClick={()=>toggle(pm,setActivePm,activePm)}
+                  style={{marginBottom:10,cursor:"pointer",padding:"4px 6px",borderRadius:6,background:active?"#f1f5f9":"transparent"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
+                      <span style={{fontSize:12,fontWeight:active?700:400,color:active?color:"#374151"}}>{pm}</span>
+                    </div>
+                    <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                      {pending>0 && <span style={{fontSize:10,background:"#fef3c7",color:"#d97706",padding:"1px 6px",borderRadius:4,fontWeight:600}}>부킹대기 {pending}</span>}
+                      <span style={{fontSize:12,fontWeight:700,color}}>{cnt}건</span>
+                    </div>
+                  </div>
+                  <div style={{background:"#f1f5f9",borderRadius:4,height:6}}>
+                    <div style={{width:`${pct}%`,background:color,borderRadius:4,height:"100%"}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {activePm && (
+            <div style={{...card,marginTop:10}}>
+              <p style={{fontSize:12,fontWeight:600,color:"#374151",margin:"0 0 10px"}}>
+                {activePm} 담당 — {tasks.filter(t=>t.pm===activePm).length}건
+              </p>
+              <TaskTable tasks={tasks.filter(t=>t.pm===activePm)}
+                color={PM_COLORS[topN(pmMap).findIndex(([p])=>p===activePm)%PM_COLORS.length]}/>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      <p style={{textAlign:"center",fontSize:11,color:"#cbd5e1",marginTop:20}}>
+        데이터 출처: 서비스기획2팀 과제현황 Google Sheets &nbsp;|&nbsp; 커머스프로덕트 기획팀
+      </p>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard/>);
+</script>
+</body>
+</html>
