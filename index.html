@@ -152,7 +152,7 @@ function Dashboard() {
 
   // ── 데이터 fetch ─────────────────────────────────────────────────────────
   React.useEffect(() => {
-    fetch(API_URL)
+    fetch(API_URL + "?t=" + Date.now())
       .then(r => r.json())
       .then(json => {
         if (json.status === 'ok') {
