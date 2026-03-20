@@ -28,7 +28,7 @@
 //  ⚠️  배포 후 아래 URL을 Apps Script 웹앱 URL로 교체하세요
 //      Apps Script → 배포 → 새 배포 → 유형: 웹 앱 → URL 복사
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const API_URL = "https://script.google.com/a/macros/gripcorp.co/s/AKfycbxFh1wpOy5YUDAL8vYbgC1xy9d2vNhGE_anuyUcV1h7bZAoDc5tbZ56-Mvsp3ea_OV4gg/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxFh1wpOy5YUDAL8vYbgC1xy9d2vNhGE_anuyUcV1h7bZAoDc5tbZ56-Mvsp3ea_OV4gg/exec";
 
 // ── 색상 팔레트 ───────────────────────────────────────────────────────────────
 const PRIORITY_COLOR = { 필수:"#dc2626", 상:"#ea580c", 중:"#ca8a04", 하:"#65a30d", 백로그:"#9ca3af" };
@@ -38,8 +38,8 @@ const STATUS_COLOR   = { 릴리스:"#6366f1", 개발중:"#3b82f6", QA:"#8b5cf6",
 const PM_COLORS = ["#6366f1","#3b82f6","#8b5cf6","#ec4899","#f59e0b","#10b981","#14b8a6"];
 
 const BOOKING_STAGES = [
-  { key:"신규검토", label:"신규인입",  sub:"기획 검토 단계",            color:"#ef4444", bg:"#fef2f2", border:"#fecaca", dot:"🔴" },
-  { key:"검토대기", label:"신규검토",  sub:"개발/디자인 부킹 검토 대상", color:"#f97316", bg:"#fff7ed", border:"#fed7aa", dot:"🟠" },
+  { key:"신규인입", label:"신규인입",  sub:"기획 검토 단계",            color:"#ef4444", bg:"#fef2f2", border:"#fecaca", dot:"🔴" },
+  { key:"신규검토", label:"신규검토",  sub:"개발/디자인 부킹 검토 대상", color:"#f97316", bg:"#fff7ed", border:"#fed7aa", dot:"🟠" },
   { key:"검토중",   label:"검토중",    sub:"리소스 확인 중",              color:"#3b82f6", bg:"#eff6ff", border:"#bfdbfe", dot:"🔵" },
   { key:"검토완료", label:"검토완료",  sub:"개발 부킹 확정",              color:"#22c55e", bg:"#f0fdf4", border:"#bbf7d0", dot:"🟢" },
 ];
@@ -52,23 +52,65 @@ function topN(obj, n=10) {
   return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n);
 }
 
+// ── 정렬 순서 ─────────────────────────────────────────────────────────────────
+const STATUS_ORDER   = ["개발중","QA","PRD 작성","상세기획완료","상세기획중","기획검토","개발검토","의사결정대기","대기","보류","릴리스"];
+const PRIORITY_ORDER = ["필수","상","중","하","백로그"];
+
 // ── 공통 태스크 테이블 ────────────────────────────────────────────────────────
 function TaskTable({ tasks, color }) {
+  const [sortCol, setSortCol]   = React.useState(null); // null | "status" | "priority" | "pm"
+  const [sortAsc, setSortAsc]   = React.useState(true);
+
   if (!tasks.length) return <p style={{fontSize:12,color:"#94a3b8",padding:"10px 0"}}>해당 과제가 없습니다.</p>;
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      if (sortAsc) setSortAsc(false);
+      else { setSortCol(null); setSortAsc(true); }
+    } else {
+      setSortCol(col); setSortAsc(true);
+    }
+  };
+  const icon = (col) => sortCol !== col ? "⇅" : sortAsc ? "↑" : "↓";
+  const iconStyle = (col) => ({ fontSize:10, color: sortCol===col ? "#6366f1" : "#94a3b8", marginLeft:2 });
+
+  const sorted = sortCol === null ? tasks : [...tasks].sort((a,b) => {
+    if (sortCol === "pm") {
+      const cmp = (a.pm||"").localeCompare(b.pm||"", "ko");
+      return sortAsc ? cmp : -cmp;
+    }
+    const ORDER = sortCol === "status" ? STATUS_ORDER : PRIORITY_ORDER;
+    const av = ORDER.indexOf(a[sortCol === "status" ? "status" : "priority"]);
+    const bv = ORDER.indexOf(b[sortCol === "status" ? "status" : "priority"]);
+    const ai = av===-1 ? 99 : av; const bi = bv===-1 ? 99 : bv;
+    return sortAsc ? ai - bi : bi - ai;
+  });
+
   return (
     <div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
         <thead>
           <tr style={{background:"rgba(0,0,0,0.04)"}}>
-            {["인입채널","도메인","과제명","우선순위","PM","상태","목표","Jira"].map(h=>(
+            {["도메인","과제명"].map(h=>(
+              <th key={h} style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
+            ))}
+            <th onClick={()=>handleSort("priority")} style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0",cursor:"pointer",userSelect:"none"}}>
+              우선순위 <span style={iconStyle("priority")}>{icon("priority")}</span>
+            </th>
+            <th onClick={()=>handleSort("pm")} style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0",cursor:"pointer",userSelect:"none"}}>
+              PM <span style={iconStyle("pm")}>{icon("pm")}</span>
+            </th>
+            <th onClick={()=>handleSort("status")} style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0",cursor:"pointer",userSelect:"none"}}>
+              상태 <span style={iconStyle("status")}>{icon("status")}</span>
+            </th>
+            {["목표","Jira"].map(h=>(
               <th key={h} style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {tasks.map((t,i)=>(
+          {sorted.map((t,i)=>(
             <tr key={i} style={{borderBottom:"1px solid #f1f5f9",background:i%2===0?"transparent":"rgba(255,255,255,0.5)"}}>
-              <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.ch}</td>
               <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.domain}</td>
               <td style={{padding:"6px 10px",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}} title={t.title}>{t.title}</td>
               <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
@@ -106,6 +148,7 @@ function Dashboard() {
   const [activeStatus,   setActiveStatus]   = React.useState(null);
   const [activePriority, setActivePriority] = React.useState(null);
   const [activePm,       setActivePm]       = React.useState(null);
+  const [activeMonth,    setActiveMonth]    = React.useState(null);
 
   // ── 데이터 fetch ─────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -113,7 +156,11 @@ function Dashboard() {
       .then(r => r.json())
       .then(json => {
         if (json.status === 'ok') {
-          setTasks(json.data || []);
+          const cleaned = (json.data || []).map(d => ({
+            ...d,
+            ch: /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)|GMT\+|GMT-/.test(d.ch) ? '' : d.ch
+          }));
+          setTasks(cleaned);
           setUpdatedAt(json.updatedAt);
         } else {
           setError("API 오류: " + (json.message || "알 수 없는 오류"));
@@ -136,6 +183,24 @@ function Dashboard() {
 
   const toggle = (val, setter, cur) => setter(cur===val ? null : val);
   const card = {background:"#fff",border:"1px solid #e2e8f0",borderRadius:12,padding:"18px 20px"};
+
+  // ── 월별 배포 일정 집계 ────────────────────────────────────────────────────
+  const parseYYMMDD = (s) => {
+    if (!s) return null;
+    const m = s.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+    if (!m) return null;
+    return { year: parseInt(m[1]), month: parseInt(m[2]) };
+  };
+  const monthMap = tasks.reduce((acc, t) => {
+    const p = parseYYMMDD(t.target);
+    if (!p) return acc;
+    const key = `${String(p.year).padStart(2,'0')}년 ${String(p.month).padStart(2,'0')}월`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(t);
+    return acc;
+  }, {});
+  const monthList = Object.entries(monthMap).sort((a,b)=>a[0]>b[0]?1:-1);
+  const fmtMonth = (key) => key.replace(/^0(\d)년/, '$1년').replace(/년 0(\d)월/, '년 $1월');
 
   const fmtDate = (iso) => {
     if (!iso) return "";
@@ -182,6 +247,49 @@ function Dashboard() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* 월별 배포 일정 */}
+      <div style={{...card,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div>
+            <h2 style={{fontSize:14,fontWeight:700,color:"#0f172a",margin:0}}>📅 월별 배포 일정</h2>
+            <p style={{fontSize:11,color:"#94a3b8",margin:"3px 0 0"}}>목표일정 기준 · 월 클릭 시 과제 목록 확인</p>
+          </div>
+          {activeMonth && <button onClick={()=>setActiveMonth(null)} style={{fontSize:11,color:"#64748b",background:"#f1f5f9",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>닫기 ✕</button>}
+        </div>
+        {monthList.length === 0
+          ? <p style={{fontSize:12,color:"#94a3b8"}}>목표일정이 입력된 과제가 없습니다.</p>
+          : <>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:activeMonth?14:0}}>
+              {monthList.map(([month, list])=>{
+                const active = activeMonth === month;
+                const now = new Date();
+                const [yy,mm] = month.replace('년 ','년').replace('월','').split('년').map(s=>parseInt(s.trim()));
+                const fullY = 2000 + yy;
+                const isPast = new Date(fullY, mm-1) < new Date(now.getFullYear(), now.getMonth());
+                const isCur  = fullY===now.getFullYear() && mm===now.getMonth()+1;
+                const bg     = active ? "#6366f1" : isCur ? "#eff6ff" : isPast ? "#f8fafc" : "#fafafa";
+                const border = active ? "#6366f1" : isCur ? "#6366f1" : "#e2e8f0";
+                const textC  = active ? "#fff" : isCur ? "#6366f1" : isPast ? "#94a3b8" : "#0f172a";
+                return (
+                  <div key={month} onClick={()=>toggle(month,setActiveMonth,activeMonth)}
+                    style={{background:bg,border:`2px solid ${border}`,borderRadius:10,padding:"10px 16px",cursor:"pointer",textAlign:"center",minWidth:90,transition:"all 0.15s"}}>
+                    <div style={{fontSize:18,fontWeight:700,color:active?"#fff":isCur?"#6366f1":isPast?"#94a3b8":"#0f172a"}}>{list.length}</div>
+                    <div style={{fontSize:11,color:textC,marginTop:2}}>{fmtMonth(month)}</div>
+                    {isCur && <div style={{fontSize:9,color:active?"#c7d2fe":"#6366f1",marginTop:1}}>이번 달</div>}
+                  </div>
+                );
+              })}
+            </div>
+            {activeMonth && monthMap[activeMonth] && (
+              <div style={{borderTop:"1px solid #e2e8f0",paddingTop:12}}>
+                <p style={{fontSize:12,fontWeight:600,color:"#0f172a",marginBottom:8}}>📌 {fmtMonth(activeMonth)} 배포 과제 — {monthMap[activeMonth].length}건</p>
+                <TaskTable tasks={monthMap[activeMonth]} color="#6366f1"/>
+              </div>
+            )}
+          </>
+        }
       </div>
 
       {/* 개발 부킹 파이프라인 */}
