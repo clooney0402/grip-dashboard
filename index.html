@@ -57,9 +57,17 @@ const STATUS_ORDER   = ["개발중","QA","PRD 작성","상세기획완료","상�
 const PRIORITY_ORDER = ["필수","상","중","하","백로그"];
 
 // ── 공통 태스크 테이블 ────────────────────────────────────────────────────────
-function TaskTable({ tasks, color }) {
-  const [sortCol, setSortCol]   = React.useState(null); // null | "status" | "priority" | "pm"
+function TaskTable({ tasks, color, bookingStage, onBookingChange }) {
+  const [sortCol, setSortCol]   = React.useState(null);
   const [sortAsc, setSortAsc]   = React.useState(true);
+  const [updating, setUpdating] = React.useState({});
+
+  const handleChange = async (task, newBooking) => {
+    const key = task.jira || task.title;
+    setUpdating(u => ({...u, [key]: true}));
+    await onBookingChange(task, newBooking);
+    setUpdating(u => ({...u, [key]: false}));
+  };
 
   if (!tasks.length) return <p style={{fontSize:12,color:"#94a3b8",padding:"10px 0"}}>해당 과제가 없습니다.</p>;
 
@@ -112,10 +120,15 @@ function TaskTable({ tasks, color }) {
               목표 <span style={iconStyle("target")}>{icon("target")}</span>
             </th>
             <th style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>Jira</th>
+            {(bookingStage==="검토필요"||bookingStage==="검토중") &&
+              <th style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>부킹 변경</th>}
           </tr>
         </thead>
         <tbody>
-          {sorted.map((t,i)=>(
+          {sorted.map((t,i)=>{
+            const key = t.jira || t.title;
+            const busy = updating[key];
+            return (
             <tr key={i} style={{borderBottom:"1px solid #f1f5f9",background:i%2===0?"transparent":"rgba(255,255,255,0.5)"}}>
               <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.domain}</td>
               <td style={{padding:"6px 10px",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500}} title={t.title}>{t.title}</td>
@@ -135,8 +148,27 @@ function TaskTable({ tasks, color }) {
                     </a>
                   : <span style={{color:"#cbd5e1",fontSize:11}}>—</span>}
               </td>
-            </tr>
-          ))}
+              {bookingStage==="검토필요" && (
+                <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                  <select disabled={busy} onChange={e=>{ if(e.target.value) handleChange(t, e.target.value); e.target.value=''; }}
+                    defaultValue=""
+                    style={{fontSize:11,border:"1px solid #e2e8f0",borderRadius:5,padding:"3px 6px",cursor:"pointer",background:"#fff",color:"#374151"}}>
+                    <option value="" disabled>{busy?"저장중…":"변경"}</option>
+                    <option value="검토중">→ 검토중</option>
+                    <option value="검토완료">→ 검토완료</option>
+                  </select>
+                </td>
+              )}
+              {bookingStage==="검토중" && (
+                <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
+                  <button disabled={busy} onClick={()=>handleChange(t,"검토완료")}
+                    style={{fontSize:11,background:busy?"#e2e8f0":"#22c55e",color:"#fff",border:"none",borderRadius:5,padding:"4px 10px",cursor:busy?"default":"pointer",fontWeight:600}}>
+                    {busy ? "저장중…" : "✓ 검토완료"}
+                  </button>
+                </td>
+              )}
+            </tr>);
+          })}
         </tbody>
       </table>
     </div>
@@ -155,9 +187,38 @@ function Dashboard() {
   const [activePriority, setActivePriority] = React.useState(null);
   const [activePm,       setActivePm]       = React.useState(null);
   const [activeMonth,    setActiveMonth]    = React.useState(null);
+  const [refreshKey,     setRefreshKey]     = React.useState(0);
+  const [toast,          setToast]          = React.useState(null);
+
+  const showToast = (msg, ok=true) => {
+    setToast({msg, ok});
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const handleBookingChange = async (task, newBooking) => {
+    const jiraKey = task.jira ? (task.jira.split('/browse/')[1] || '') : '';
+    const url = API_URL + '?t=' + Date.now()
+      + '&action=update'
+      + '&jira_key=' + encodeURIComponent(jiraKey)
+      + '&title='    + encodeURIComponent(task.title)
+      + '&booking='  + encodeURIComponent(newBooking);
+    try {
+      const res  = await fetch(url);
+      const json = await res.json();
+      if (json.status === 'ok') {
+        showToast('✅ ' + task.title.slice(0,20) + '… → ' + newBooking + ' 변경 완료');
+        setRefreshKey(k => k + 1);
+      } else {
+        showToast('❌ 오류: ' + json.message, false);
+      }
+    } catch(e) {
+      showToast('❌ 네트워크 오류', false);
+    }
+  };
 
   // ── 데이터 fetch ─────────────────────────────────────────────────────────
   React.useEffect(() => {
+    setLoading(true);
     fetch(API_URL + "?t=" + Date.now())
       .then(r => r.json())
       .then(json => {
@@ -174,7 +235,7 @@ function Dashboard() {
       })
       .catch(() => setError("데이터를 불러오지 못했습니다. API URL을 확인하세요."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   // ── 집계 ─────────────────────────────────────────────────────────────────
   const total    = tasks.length;
@@ -236,6 +297,15 @@ function Dashboard() {
   // ── 정상 렌더 ─────────────────────────────────────────────────────────────
   return (
     <div style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif",background:"#f8fafc",minHeight:"100vh",padding:"24px"}}>
+
+      {/* 토스트 알림 */}
+      {toast && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:9999,
+          background:toast.ok?"#0f172a":"#ef4444",color:"#fff",padding:"10px 20px",borderRadius:8,
+          fontSize:13,fontWeight:500,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",whiteSpace:"nowrap"}}>
+          {toast.msg}
+        </div>
+      )}
 
       {/* 헤더 */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
@@ -335,7 +405,9 @@ function Dashboard() {
           return (
             <div style={{background:si.bg,border:`1px solid ${si.border}`,borderRadius:10,padding:14}}>
               <p style={{fontSize:13,fontWeight:600,color:si.color,margin:"0 0 10px"}}>{si.dot} {si.label} — {filtered.length}건</p>
-              <TaskTable tasks={filtered} color={si.color}/>
+              <TaskTable tasks={filtered} color={si.color}
+                bookingStage={activeBooking}
+                onBookingChange={handleBookingChange}/>
             </div>
           );
         })()}
