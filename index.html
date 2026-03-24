@@ -57,17 +57,9 @@ const STATUS_ORDER   = ["개발중","QA","PRD 작성","상세기획완료","상�
 const PRIORITY_ORDER = ["필수","상","중","하","백로그"];
 
 // ── 공통 태스크 테이블 ────────────────────────────────────────────────────────
-function TaskTable({ tasks, color, bookingStage, onBookingChange }) {
-  const [sortCol, setSortCol]   = React.useState(null);
-  const [sortAsc, setSortAsc]   = React.useState(true);
-  const [updating, setUpdating] = React.useState({});
-
-  const handleChange = async (task, newBooking) => {
-    const key = task.jira || task.title;
-    setUpdating(u => ({...u, [key]: true}));
-    await onBookingChange(task, newBooking);
-    setUpdating(u => ({...u, [key]: false}));
-  };
+function TaskTable({ tasks, color }) {
+  const [sortCol, setSortCol] = React.useState(null);
+  const [sortAsc, setSortAsc] = React.useState(true);
 
   if (!tasks.length) return <p style={{fontSize:12,color:"#94a3b8",padding:"10px 0"}}>해당 과제가 없습니다.</p>;
 
@@ -120,14 +112,10 @@ function TaskTable({ tasks, color, bookingStage, onBookingChange }) {
               목표 <span style={iconStyle("target")}>{icon("target")}</span>
             </th>
             <th style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>Jira</th>
-            {(bookingStage==="검토필요"||bookingStage==="검토중") &&
-              <th style={{padding:"7px 10px",textAlign:"left",color:"#475569",fontWeight:600,whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"}}>부킹 변경</th>}
           </tr>
         </thead>
         <tbody>
           {sorted.map((t,i)=>{
-            const key = t.jira || t.title;
-            const busy = updating[key];
             return (
             <tr key={i} style={{borderBottom:"1px solid #f1f5f9",background:i%2===0?"transparent":"rgba(255,255,255,0.5)"}}>
               <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{t.domain}</td>
@@ -148,25 +136,6 @@ function TaskTable({ tasks, color, bookingStage, onBookingChange }) {
                     </a>
                   : <span style={{color:"#cbd5e1",fontSize:11}}>—</span>}
               </td>
-              {bookingStage==="검토필요" && (
-                <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
-                  <select disabled={busy} onChange={e=>{ if(e.target.value) handleChange(t, e.target.value); e.target.value=''; }}
-                    defaultValue=""
-                    style={{fontSize:11,border:"1px solid #e2e8f0",borderRadius:5,padding:"3px 6px",cursor:"pointer",background:"#fff",color:"#374151"}}>
-                    <option value="" disabled>{busy?"저장중…":"변경"}</option>
-                    <option value="검토중">→ 검토중</option>
-                    <option value="검토완료">→ 검토완료</option>
-                  </select>
-                </td>
-              )}
-              {bookingStage==="검토중" && (
-                <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
-                  <button disabled={busy} onClick={()=>handleChange(t,"검토완료")}
-                    style={{fontSize:11,background:busy?"#e2e8f0":"#22c55e",color:"#fff",border:"none",borderRadius:5,padding:"4px 10px",cursor:busy?"default":"pointer",fontWeight:600}}>
-                    {busy ? "저장중…" : "✓ 검토완료"}
-                  </button>
-                </td>
-              )}
             </tr>);
           })}
         </tbody>
@@ -187,34 +156,8 @@ function Dashboard() {
   const [activePriority, setActivePriority] = React.useState(null);
   const [activePm,       setActivePm]       = React.useState(null);
   const [activeMonth,    setActiveMonth]    = React.useState(null);
-  const [refreshKey,     setRefreshKey]     = React.useState(0);
-  const [toast,          setToast]          = React.useState(null);
-
-  const showToast = (msg, ok=true) => {
-    setToast({msg, ok});
-    setTimeout(() => setToast(null), 2500);
-  };
-
-  const handleBookingChange = async (task, newBooking) => {
-    const jiraKey = task.jira ? (task.jira.split('/browse/')[1] || '') : '';
-    const url = API_URL + '?t=' + Date.now()
-      + '&action=update'
-      + '&jira_key=' + encodeURIComponent(jiraKey)
-      + '&title='    + encodeURIComponent(task.title)
-      + '&booking='  + encodeURIComponent(newBooking);
-    try {
-      const res  = await fetch(url);
-      const json = await res.json();
-      if (json.status === 'ok') {
-        showToast('✅ ' + task.title.slice(0,20) + '… → ' + newBooking + ' 변경 완료');
-        setRefreshKey(k => k + 1);
-      } else {
-        showToast('❌ 오류: ' + json.message, false);
-      }
-    } catch(e) {
-      showToast('❌ 네트워크 오류', false);
-    }
-  };
+  const [activeReleased, setActiveReleased] = React.useState(false);
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   // ── 데이터 fetch ─────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -261,6 +204,7 @@ function Dashboard() {
   const monthMap = tasks.reduce((acc, t) => {
     const p = parseYYMMDD(t.target);
     if (!p) return acc;
+    if (p.year < 26) return acc;  // 25년 이하 제외
     const key = `${String(p.year).padStart(2,'0')}년 ${String(p.month).padStart(2,'0')}월`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(t);
@@ -297,15 +241,6 @@ function Dashboard() {
   // ── 정상 렌더 ─────────────────────────────────────────────────────────────
   return (
     <div style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif",background:"#f8fafc",minHeight:"100vh",padding:"24px"}}>
-
-      {/* 토스트 알림 */}
-      {toast && (
-        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:9999,
-          background:toast.ok?"#0f172a":"#ef4444",color:"#fff",padding:"10px 20px",borderRadius:8,
-          fontSize:13,fontWeight:500,boxShadow:"0 4px 16px rgba(0,0,0,0.2)",whiteSpace:"nowrap"}}>
-          {toast.msg}
-        </div>
-      )}
 
       {/* 헤더 */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
@@ -401,17 +336,42 @@ function Dashboard() {
 
         {activeBooking && (()=>{
           const si = BOOKING_STAGES.find(s=>s.key===activeBooking);
-          const filtered = tasks.filter(t=>t.booking===activeBooking);
+          const filtered = tasks.filter(t=>t.booking===activeBooking && !(activeBooking==="검토완료" && t.status==="릴리스"));
           return (
             <div style={{background:si.bg,border:`1px solid ${si.border}`,borderRadius:10,padding:14}}>
               <p style={{fontSize:13,fontWeight:600,color:si.color,margin:"0 0 10px"}}>{si.dot} {si.label} — {filtered.length}건</p>
-              <TaskTable tasks={filtered} color={si.color}
-                bookingStage={activeBooking}
-                onBookingChange={handleBookingChange}/>
+              <TaskTable tasks={filtered} color={si.color}/>
             </div>
           );
         })()}
       </div>
+
+      {/* 릴리스 완료 섹션 */}
+      {(()=>{
+        const releasedTasks = tasks.filter(t=>t.status==="릴리스");
+        return (
+          <div style={{...card,marginBottom:16,borderLeft:"4px solid #6366f1"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}
+              onClick={()=>setActiveReleased(v=>!v)}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:18}}>🚀</span>
+                <div>
+                  <h2 style={{fontSize:14,fontWeight:700,color:"#0f172a",margin:0}}>릴리스 완료</h2>
+                  <p style={{fontSize:11,color:"#94a3b8",margin:"2px 0 0"}}>배포 완료된 과제 목록</p>
+                </div>
+                <span style={{fontSize:22,fontWeight:800,color:"#6366f1",marginLeft:8}}>{releasedTasks.length}</span>
+                <span style={{fontSize:12,color:"#64748b"}}>건</span>
+              </div>
+              <span style={{fontSize:13,color:"#94a3b8"}}>{activeReleased?"▲ 닫기":"▼ 펼치기"}</span>
+            </div>
+            {activeReleased && (
+              <div style={{marginTop:14,borderTop:"1px solid #e2e8f0",paddingTop:14}}>
+                <TaskTable tasks={releasedTasks} color="#6366f1"/>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* 하단 3개 섹션 */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
