@@ -179,6 +179,7 @@ function Dashboard() {
   const [error, setError]         = React.useState(null);
   const [updatedAt, setUpdatedAt] = React.useState(null);
 
+  const [modal, setModal] = React.useState(null); // { label, tasks, color }
   const [activeBooking,  setActiveBooking]  = React.useState(null);
   const [activeStatus,   setActiveStatus]   = React.useState(null);
   const [activePriority, setActivePriority] = React.useState(null);
@@ -295,6 +296,30 @@ function Dashboard() {
   return (
     <div style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif",background:"#f8fafc",minHeight:"100vh",padding:"24px"}}>
 
+      {/* 모달 */}
+      {modal && (
+        <div onClick={()=>setModal(null)}
+          style={{position:"fixed",inset:0,zIndex:9000,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:1100,maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+            {/* 모달 헤더 */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{width:10,height:10,borderRadius:"50%",background:modal.color,display:"inline-block"}}/>
+                <h2 style={{fontSize:15,fontWeight:700,color:"#0f172a",margin:0}}>{modal.label}</h2>
+                <span style={{fontSize:13,fontWeight:700,color:modal.color}}>{modal.tasks.length}건</span>
+              </div>
+              <button onClick={()=>setModal(null)}
+                style={{fontSize:18,color:"#94a3b8",background:"none",border:"none",cursor:"pointer",lineHeight:1}}>✕</button>
+            </div>
+            {/* 모달 바디 */}
+            <div style={{overflowY:"auto",padding:"16px 24px"}}>
+              <TaskTable tasks={modal.tasks} color={modal.color}/>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 토스트 */}
       {toast && (
         <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:9999,
@@ -313,8 +338,15 @@ function Dashboard() {
           </p>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[{label:"릴리스완료",val:released,color:"#6366f1"},{label:"진행중",val:inProg,color:"#3b82f6"},{label:"대기/보류",val:waiting,color:"#94a3b8"}].map(s=>(
-            <div key={s.label} style={{...card,padding:"10px 16px",textAlign:"center",minWidth:80}}>
+          {[
+            {label:"릴리스완료", val:released, color:"#6366f1", filter: t=>t.status==="릴리스"},
+            {label:"진행중",     val:inProg,   color:"#3b82f6", filter: t=>["개발중","QA","상세기획완료","상세기획중","기획검토","개발검토","PRD 작성"].includes(t.status)},
+            {label:"대기/보류",  val:waiting,  color:"#94a3b8", filter: t=>["대기","보류","의사결정대기"].includes(t.status)},
+          ].map(s=>(
+            <div key={s.label} onClick={()=>setModal({label:s.label, tasks:tasks.filter(s.filter), color:s.color})}
+              style={{...card,padding:"10px 16px",textAlign:"center",minWidth:80,cursor:"pointer",transition:"box-shadow 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.1)"}
+              onMouseLeave={e=>e.currentTarget.style.boxShadow=""}>
               <div style={{fontSize:20,fontWeight:700,color:s.color}}>{s.val}</div>
               <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{s.label}</div>
             </div>
